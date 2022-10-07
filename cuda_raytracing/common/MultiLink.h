@@ -21,6 +21,7 @@
 typedef struct MultiLinkElement {
 #define MultiLinkElementTemplate(T)\
 	int linkcount;\
+	int linkindex;\
 	int uniqueID;\
 	T ** prev;\
 	T ** next;\
@@ -106,6 +107,7 @@ _PLATFORM MultiLinkElement * MultiLinkElement_free(MultiLinkElement * that) {
 }
 _PLATFORM void _MultiLinkElement(MultiLinkElement * that, int linkcount) {
 	that->linkcount = linkcount;
+	that->linkindex = -1;
 
 	that->clear = MultiLinkElement_clear;
 	that->free = MultiLinkElement_free;
@@ -113,7 +115,7 @@ _PLATFORM void _MultiLinkElement(MultiLinkElement * that, int linkcount) {
 
 	that->clear(that);
 }
-void _MultiLinkElementEx(MultiLinkElement * that, int linkcount) {
+__PLATFORM void _MultiLinkElementEx(MultiLinkElement * that, int linkcount) {
 	that->linkcount = linkcount;
 
 	that->clear = MultiLinkElement_clear;
@@ -143,6 +145,9 @@ _PLATFORM MultiLinkElement * MultiLinkBase_removeLink(MultiLinkBase * that, Mult
 	before = link->prev[that->linkindex];
 	after = link->next[that->linkindex];
 
+	if (!before || !after) {
+		return NULL;
+	}
 	before->next[that->linkindex] = after;
 	after->prev[that->linkindex] = before;
 	link->prev[that->linkindex] = NULL;
@@ -281,7 +286,7 @@ _PLATFORM void _MultiLinkBase(MultiLinkBase * that, int linkindex) {
 	that->get = MultiLinkBase_get;
 	that->getLink = MultiLinkBase_getLink;
 }
-void _MultiLinkBaseEx(MultiLinkBase * that, int linkindex) {
+__PLATFORM void _MultiLinkBaseEx(MultiLinkBase * that, int linkindex) {
 	that->linkcount = 0;
 	that->linkindex = linkindex;
 	that->link = NULL;
@@ -314,7 +319,9 @@ _PLATFORM MultiLinkElement * ElementPool_get(ElementPool * that) {
 			for (j = 0; j < MAP_SHIFT && index < that->size; j++, index++) {
 				if (that->map[i] & (0x01 << j)) {
 					that->map[i] &= ~(0x01 << j);
-					return that->at(that, index);
+					MultiLinkElement * ret = that->at(that, index);
+					ret->linkindex = index;
+					return ret;
 				}
 			}
 		}
@@ -324,6 +331,13 @@ _PLATFORM MultiLinkElement * ElementPool_get(ElementPool * that) {
 _PLATFORM void ElementPool_back(ElementPool * that, MultiLinkElement * o){
 	int i, j, index;
 	if (o == NULL) {
+		return;
+	}
+	if (o->linkindex >= 0 && o->linkindex < that->size) {
+		index = o->linkindex;
+		i = index / MAP_SHIFT;
+		j = index - i * MAP_SHIFT;
+		that->map[i] |= (0x01 << j);
 		return;
 	}
 	for (index = 0; index < that->size; index++) {
@@ -357,7 +371,7 @@ _PLATFORM void _ElementPool(ElementPool * that, MultiLinkElement * pool, UMAP * 
 		that->map[i] = MAP_MASK;
 	}
 }
-void _ElementPoolEx(ElementPool * that, MultiLinkElement * pool, UMAP * map, int size) {
+__PLATFORM void _ElementPoolEx(ElementPool * that, MultiLinkElement * pool, UMAP * map, int size) {
 	int i;
 	if (size > POOL_MAX) {
 		//size = POOL_MAX;

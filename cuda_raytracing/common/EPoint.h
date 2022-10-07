@@ -15,7 +15,7 @@
 #ifdef RUN_DEVICE
 #define PLATFORM _device__
 #define _PLATFORM __device__
-#define __PLATFORM	__device__
+#define __PLATFORM	
 #else
 #define PLATFORM _inline
 #define _PLATFORM 
@@ -52,8 +52,8 @@ typedef int                 INT;
 typedef float               FLOAT;
 typedef unsigned long       DWORD;
 typedef DWORD				COLORREF;
-typedef float		EPTYPE;
-typedef float	EFTYPE;
+typedef double		EPTYPE;
+typedef double	EFTYPE;
 typedef void	EPVOID;
 typedef bool	EBTYPE;
 
@@ -356,7 +356,7 @@ public:
 		y = EPTYPE(ty*cos(angle) + tx*sin(angle));
 	}
 
-	_PLATFORM float Q_rsqrt(float number)
+	static _PLATFORM float Q_rsqrt(float number)
 	{
 		long i;
 		float x2, y;

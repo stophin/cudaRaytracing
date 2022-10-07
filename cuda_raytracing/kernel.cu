@@ -8,31 +8,33 @@
 #define DEBUG(x, ...)
 #endif
 
-
+#define MAX_PRECISE 100000.0
 
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
 #include <stdio.h>
-#include <conio.h>
 #include "math3d/Manager3D.h"
 #include "math3d/Texture3D.h"
 #include "math3d/Texture.h"
-#include "math3d/Device.h"
+#include "platform/Device.h"
 #include "raytracing/Ray.h"
 #include "common/MultiLink.h"
 
 _PLATFORM Manager3D * dev_man;
 _PLATFORM TextureManager * dev_tman;
+_PLATFORM VertsMan** dev_vman;
 _PLATFORM COLORREF * dev_res;
 _PLATFORM EFTYPE * dev_resf;
 _PLATFORM Device * _device;
 _PLATFORM DWORD * tango;
 _PLATFORM EFTYPE * depth;
 __device__ int *a;
-#define THREAD_W		5
-#define THREAD_H		5
-#define MAX_ITERATOR	THREAD_W * THREAD_H
+#define THREAD_W		50
+#define THREAD_H		50
+#define THREAD_W_R		10
+#define THREAD_H_R		10
+#define MAX_ITERATOR	THREAD_W_R * THREAD_H_R
 #define WIN_WIDTH	800
 #define WIN_HEIGHT	600
 _PLATFORM Obj3D ** objIterator;
@@ -55,7 +57,7 @@ typedef struct Triangles {
 _PLATFORM Triangles * tgIterator;
 Device device;
 
-__global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Triangles * tgIterator, INT grid, INT iteratorW, INT iteratorH, Device * device, VertsPoolImp * vertsPool)
+__global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, VertsMan** _vman, Triangles * tgIterator, INT grid, INT iteratorW, INT iteratorH, Device * device, VertsPoolImp * vertsPool)
 {
 
 #ifdef RUN_DEVICE
@@ -68,8 +70,9 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 	INT iteratorIndex = 0;
 	int sx = blockIdx.x * iteratorW;
 	int sy = blockIdx.y * iteratorH;
-	int ex = blockIdx.x * iteratorW + iteratorW - 2;
-	int ey = blockIdx.y * iteratorH + iteratorH - 2;
+	int line = 0; //block lines
+	int ex = blockIdx.x * iteratorW + iteratorW - line;
+	int ey = blockIdx.y * iteratorH + iteratorH - line;
 	//int tid = blockIdx.x  * blockDim.x + blockIdx.y;
 	int tid = blockIdx.x + blockIdx.y * gridDim.x;
 	//int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -99,7 +102,7 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 	DWORD * _raytracing;
 	EFTYPE trans;
 	if (tid >= device->threadImageCount) {
-		return;
+		//return;
 	}
 	//DWORD *_image = device->threadImage[tid];
 	//memset(_image, 0, sizeof(DWORD)* device->width * device->height);
@@ -107,15 +110,23 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 	VertsPoolImp * pool = &vertsPool[tid];
 	memset(pool, 0, sizeof(VertsPoolImp));
 	_VertsPoolImp(pool);
-	VertsMan raytracing_verts;
+	VertsMan& raytracing_verts = *_vman[tid * 2 + 0];
+	VertsMan& raytracing_verts_accumulated = *_vman[tid * 2 + 1];
+	//VertsMan raytracing_verts;
+	//VertsMan* praytracing_verts = NULL;
+	//cudaMalloc(&praytracing_verts, sizeof(VertsMan));
+	//VertsMan& raytracing_verts = *praytracing_verts;
 	_VertsMan(&raytracing_verts, 0, pool);
-	VertsMan raytracing_verts_accumulated;
+	////VertsMan raytracing_verts_accumulated;
+	//VertsMan* praytracing_verts_accumulated = NULL;
+	//cudaMalloc(&praytracing_verts_accumulated, sizeof(VertsMan));
+	//VertsMan& raytracing_verts_accumulated = *praytracing_verts_accumulated;
 	_VertsMan(&raytracing_verts_accumulated, 1, pool);
 
 	VObjMan * link = NULL;
 	ObjMan * olink;
 	//MultiLinkList<Obj3D> octs(MAX_OBJ3D_LINK + 1 + id);
-	ObjMan octs;
+	//ObjMan octs;
 	DWORD * __image;
 	//reflection times
 	INT count, shadow_count;
@@ -170,11 +181,11 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 				// when the ray is reflection or refraction
 				// use the objects around instead of all the objects
 
-				if (0 && 1 == ray.type || 2 == ray.type) {
+				if (0 && (1 == ray.type || 2 == ray.type)) {
 					if (!ray.obj) {
 						ray.obj = ray.obj;
 					}
-					olink = &octs;
+					//olink = &octs;
 					//olink = &man.octs;
 					olink->clearLink(olink);
 					man.octTree.CollisionA(&man.octTree, man.octTree.link, (Obj3D*)ray.obj, olink);
@@ -188,13 +199,14 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 					int render_state = 0;
 					VObj * v, *v0, *v1, *vtemp;
 
+					EFTYPE trans_last = 1000;
 					// for each triangle
 					do {
 						//object aabb intersection
 						INT intersection = 1;
 						if (&man.objs == olink) {
 							//intersection = man.octTree.Collision(&man.octTree, man.octTree.link, ray.original, ray.direction, (Camera3D*)cam, obj);
-							intersection = Collision(ray.original, ray.direction, obj);
+							intersection = Collision(ray.original, ray.direction, obj, trans_last);
 							//intersection = 1;
 						}
 						if (intersection) {
@@ -212,7 +224,6 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 							// more than 3 verts
 							if (v && link->linkcount >= 3) {
 								v0 = NULL; v1 = NULL;
-								EFTYPE trans_last = 1000;
 								int traverseCount = 0;
 								do {
 									traverseCount++;
@@ -230,8 +241,8 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 											//trans is greater than zero, and less than last trans
 											if (EP_GTZERO(trans)) {
 												//RAYTRACING_MUTEX(Verts * verts = new Verts(););
-												Verts vertsTemp;
-												Verts * verts = pool->vertsPool.get(&pool->vertsPool);
+												//Verts vertsTemp;
+												Verts* verts = pool->vertsPool.get(&pool->vertsPool);
 #ifdef WIN_DEBUG
 												if (verts)
 													res[95] = 10000000 + (DWORD)verts;
@@ -248,7 +259,7 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 													verts->trans = trans;
 													verts->n_r.set(v->n_r);
 													verts->obj = obj;
-													if (verts != &vertsTemp) 
+													if (verts != &vertsTemp)
 														raytracing_verts.insertLink(&raytracing_verts, verts, NULL, NULL);
 													__image = &verts->color;
 													//__image = _raytracing;
@@ -342,27 +353,27 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 														}
 														//reflection verts
 														else if (1 == render_state) {
-															*__image = Light3D_add(*__image, BLACK, f / 2);
-															//*__image = Light3D::multi(BLACK, f);
+															*__image = Light3D_add(*__image, EP_BLACK, f / 2);
+															//*__image = Light3D::multi(EP_BLACK, f);
 															//set type reflection
 															verts->type = 1;
 														}
 														//transparent verts
 														else if (2 == render_state) {
-															*__image = Light3D_add(*__image, BLACK, f / 2);
-															//*__image = Light3D::multi(BLACK, f);
+															*__image = Light3D_add(*__image, EP_BLACK, f / 2);
+															//*__image = Light3D::multi(EP_BLACK, f);
 															//set type transparent
 															verts->type = 2;
+														}
 													}
 												}
-											}
-											//when the ray is reflection,
-											//there will be one or two hit point
-											//in other case, because of using backface cull,
-											//there will be only one hit point
-											if (!(1 == ray.type)) {
-												break;
-													}
+												//when the ray is reflection,
+												//there will be one or two hit point
+												//in other case, because of using backface cull,
+												//there will be only one hit point
+												if (!(1 == ray.type)) {
+													break;
+												}
 											}
 										}
 
@@ -488,13 +499,14 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 									int render_state = 0;
 									VObj * v, *v0, *v1, *vtemp;
 
+									EFTYPE trans_last = 1000;
 									// for each triangle
 									do {
 										//object aabb intersection
 										INT intersection = 1;
 										if (&man.objs == olink) {
 											//intersection = man.octTree.Collision(&man.octTree, man.octTree.link, ray.original, ray.direction, (Camera3D*)cam, obj);
-											intersection = Collision(ray.original, ray.direction, obj);
+											intersection = Collision(ray.original, ray.direction, obj, trans_last);
 										}
 										if (intersection) {
 
@@ -511,7 +523,6 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 											// more than 3 verts
 											if (v && link->linkcount >= 3) {
 												v0 = NULL; v1 = NULL;
-												EFTYPE trans_last = 1000;
 												int traverseCount = 0;
 												do {
 													traverseCount++;
@@ -527,6 +538,7 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 															trans = Vert3D::GetLineIntersectPointWithTriangle(v->v_c, v0->v_c, v1->v_c, ray.original, ray.direction, trans_last, p);
 															//trans is greater than zero, and less than last trans
 															if (EP_GTZERO(trans)) {
+																trans_last = trans;
 																*__image = Light3D_multi(*__image, ray.f / 5);
 
 																//caustic affect on refraction
@@ -788,7 +800,7 @@ __global__ void renderRayTracing(EFTYPE * res, INT size, Manager3D * _man, Trian
 
 			//accumulate all the ray traced verts' color
 			Verts * verts = raytracing_verts_accumulated.link;
-			DWORD color = BLACK;
+			DWORD color = EP_BLACK;
 			if (verts) {
 				do {
 					//if (0 == verts->type) 
@@ -843,10 +855,22 @@ __global__ void initializeKernel(EFTYPE * res, INT size, Manager3D * _man, VObjP
 
 	Object3D *_obj = &man.addObject();
 	_obj->addVert(_obj, -10, -10, 10).addVert(_obj, 10, -10, 10).addVert(_obj, -10, 10, 10).addVertA(_obj, 10, 10, 10, -1)._scale(_obj, 5, 5, 5)
-		._move(_obj, 0, 100, -200).setColor(_obj, GREEN).setTexture(_obj, tman, 0, 0).setUV(_obj, 0, 0);
+		._move(_obj, 0, 100, -200).setColor(_obj, GREEN).setTexture(_obj, tman, 1, 0).setUV(_obj, 0, 0);
 	_obj = &man.addObject();
 	_obj->addVert(_obj, -10,0,-10).addVert(_obj, 10, 0, -10).addVert(_obj, -10, 0, 10).addVertA(_obj, 10, 0, 10, -1)._rotate(_obj, 0, 0, 180)
 		._scale(_obj, 5, 5, 5)._move(_obj, 250, -40, 250).setColor(_obj, LIGHTGRAY);
+
+	_obj = &man.addObject();
+	_obj->addVert(_obj, -10, -10, 10).addVert(_obj, 10, -10, 10).addVert(_obj, -10, 10, 10).addVertA(_obj, 10, 10, 10, -1)._scale(_obj, 5, 5, 5)
+		._move(_obj, 0, 100, -100).setColor(_obj, GREEN).setTexture(_obj, tman, 1, 0).setUV(_obj, 0, 0);
+
+	_obj = &man.addObject();
+	_obj->addVert(_obj, -10, -10, 10).addVert(_obj, 10, -10, 10).addVert(_obj, -10, 10, 10).addVertA(_obj, 10, 10, 10, -1)._scale(_obj, 5, 5, 5)
+		._move(_obj, 0, 100, -0).setColor(_obj, GREEN).setTexture(_obj, tman, 1, 0).setUV(_obj, 0, 0);
+
+	_obj = &man.addObject();
+	_obj->addVert(_obj, -10, -10, 10).addVert(_obj, 10, -10, 10).addVert(_obj, -10, 10, 10).addVertA(_obj, 10, 10, 10, -1)._scale(_obj, 5, 5, 5)
+		._move(_obj, 0, 100, 100).setColor(_obj, GREEN).setTexture(_obj, tman, 1, 0).setUV(_obj, 0, 0);
 
 	man.initialized = 1;
 
@@ -911,6 +935,7 @@ cudaError_t initializeWithCuda(EFTYPE * res, int res_size, Manager3D * man)
 {
 	cudaError_t cudaStatus;
 
+	DWORD** threadImage = NULL;
 	TextureLocalManager tman;
 	TextureLocalPoolImp textPool;
 	_TextureLocalPoolImp(&textPool);
@@ -918,7 +943,7 @@ cudaError_t initializeWithCuda(EFTYPE * res, int res_size, Manager3D * man)
 	tman.Init();
 	INT tid = tman.addTexture(64, 64, 8);
 	fprintf(stderr, "added texture: %d", tid);
-	tid = tman.addTexture("1.jpg");
+	tid = tman.addTexture("image/1.jpg");
 	fprintf(stderr, "added texture: %d", tid);
 
 	// Allocate GPU buffers of objects
@@ -997,9 +1022,31 @@ cudaError_t initializeWithCuda(EFTYPE * res, int res_size, Manager3D * man)
 		fprintf(stderr, "cudaMalloc failed for texture poll!");
 		goto Error1_1;
 	}
+	//verts
+	cudaStatus = cudaMalloc((void**)&dev_vman, sizeof(VertsMan*) * THREAD_W * THREAD_H * 2);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMalloc failed for verts!");
+		goto Error1_2;
+	}
+	int vman_count = 0;
+	VertsMan** vman = new VertsMan*[THREAD_W * THREAD_H * 2];
+	for (int i = 0; i < THREAD_W * THREAD_H * 2; i++) {
+		cudaStatus = cudaMalloc((void**)&vman[i], sizeof(VertsMan));
+		if (cudaStatus != cudaSuccess) {
+			fprintf(stderr, "cudaMalloc failed for verts!");
+			goto Error1_3;
+		}
+		vman_count++;
+	}
+	cudaStatus = cudaMemcpy(dev_vman, vman, sizeof(VertsMan*) * THREAD_W * THREAD_H * 2, cudaMemcpyHostToDevice);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMalloc failed for verts (%s)!", cudaGetErrorString(cudaStatus));
+		goto Error1_3;
+	}
+
 	//make pool copy
 	TextureLocalPoolImp textPoolBackup;
-	memcpy(&textPoolBackup, &textPool, sizeof(TextureLocalPoolImp));
+	//memcpy(&textPoolBackup, &textPool, sizeof(TextureLocalPoolImp));
 	for (int i = 0; i < MAX_TEXTURELOCAL; i++) {
 		textPoolBackup.pool[i].texture = NULL;
 	}
@@ -1025,11 +1072,19 @@ cudaError_t initializeWithCuda(EFTYPE * res, int res_size, Manager3D * man)
 			}
 			//change texture pointer
 			textPoolBackup.pool[i].texture = texture;
+			textPoolBackup.pool[i].width = textLocal->width;
+			textPoolBackup.pool[i].height = textLocal->height;
+			textPoolBackup.pool[i].uniqueID = textLocal->uniqueID;
 		}
 
 	}
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed for texture!");
+		goto Error1_5;
+	}
+	//make suer TexturePoolImp and TextureLocalPoolImp are same size
+	if (sizeof(TexturePoolImp) != sizeof(TextureLocalPoolImp)) {
+		fprintf(stderr, "TexturePoolImp and TextureLocalPoolImp are not the same size!");
 		goto Error1_5;
 	}
 	//texture pool copy
@@ -1089,30 +1144,29 @@ cudaError_t initializeWithCuda(EFTYPE * res, int res_size, Manager3D * man)
 		fprintf(stderr, "cudaMalloc failed!");
 		goto Error10;
 	}
-	DWORD ** threadImage = NULL;
 	device.Init(WIN_WIDTH, WIN_HEIGHT);
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < 2; i++) {
 		cudaStatus = cudaMalloc((void**)&device.float_a[i], sizeof(EFTYPE)* device.width * device.height);
 		if (cudaStatus != cudaSuccess) {
 			fprintf(stderr, "cudaMalloc failed!");
 			goto Error11;
 		}
 	}
-	for (int i = 0; i < 6; i++) {
+	for (int i = 0; i < 3; i++) {
 		cudaStatus = cudaMalloc((void**)&device.dword_a[i], sizeof(DWORD)* device.width * device.height);
 		if (cudaStatus != cudaSuccess) {
 			fprintf(stderr, "cudaMalloc failed!");
 			goto Error12;
 		}
 	}
-	cudaStatus = cudaMalloc((void**)&device.threadImage, sizeof(DWORD*)* THREAD_W * THREAD_H);
+	cudaStatus = cudaMalloc((void**)&device.threadImage, sizeof(DWORD*)* MAX_ITERATOR);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
 		goto Error13;
 	}
-	threadImage = new DWORD*[THREAD_W * THREAD_H];
+	threadImage = new DWORD*[MAX_ITERATOR];
 	device.threadImageCount = 0;
-	for (int i = 0; i < THREAD_W * THREAD_H; i++) {
+	for (int i = 0; i < MAX_ITERATOR; i++) {
 		cudaStatus = cudaMalloc((void**)&threadImage[i], sizeof(DWORD)* device.width * device.height);
 		if (cudaStatus != cudaSuccess) {
 			fprintf(stderr, "cudaMalloc failed!");
@@ -1120,7 +1174,7 @@ cudaError_t initializeWithCuda(EFTYPE * res, int res_size, Manager3D * man)
 		}
 		device.threadImageCount++;
 	}
-	cudaStatus = cudaMemcpy(device.threadImage, threadImage, sizeof(DWORD*)* THREAD_W * THREAD_H, cudaMemcpyHostToDevice);
+	cudaStatus = cudaMemcpy(device.threadImage, threadImage, sizeof(DWORD*)* MAX_ITERATOR, cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMemcpy failed!");
 		goto Error14;
@@ -1180,7 +1234,7 @@ cudaError_t initializeWithCuda(EFTYPE * res, int res_size, Manager3D * man)
 	goto Error;
 	///////////////////////////////////////
 Error14:
-	for (int i = 0; threadImage && i < device.threadImageCount && i < THREAD_W * THREAD_H; i++) {
+	for (int i = 0; threadImage && i < device.threadImageCount && i < MAX_ITERATOR; i++) {
 		if (threadImage[i]) {
 			cudaFree(threadImage[i]);
 		}
@@ -1225,6 +1279,12 @@ Error1_5:
 			cudaFree(textPoolBackup.pool[i].texture);
 		}
 	}
+Error1_3:
+	for (int i = 0; i < vman_count && i < THREAD_W * THREAD_H; i++) {
+		cudaFree(vman[i]);
+	}
+Error1_2:
+	cudaFree(dev_vman);
 Error1_1:
 	cudaFree(dev_tman);
 Error1:
@@ -1529,8 +1589,8 @@ cudaError_t rotateWithCuda(EFTYPE * res, int res_size, Manager3D * man, EFTYPE a
 	//核函数参数：
 	//<<<块并行数，线程并行数，每个块使用的共享内存大小，流对象>>>
 	// Launch a kernel on the GPU with one thread for each element.
-	dim3    grid(THREAD_W, THREAD_H);
-	normalizeKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, objIterator, THREAD_W, 1, 1);
+	dim3    grid(THREAD_W_R, THREAD_H_R);
+	normalizeKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, objIterator, THREAD_W_R, 1, 1);
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
 	if (cudaStatus != cudaSuccess) {
@@ -1690,8 +1750,8 @@ cudaError_t moveWithCuda(EFTYPE * res, int res_size, Manager3D * man, EFTYPE ax,
 	//核函数参数：
 	//<<<块并行数，线程并行数，每个块使用的共享内存大小，流对象>>>
 	// Launch a kernel on the GPU with one thread for each element.
-	dim3    grid(THREAD_W, THREAD_H);
-	normalizeKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, objIterator, THREAD_W, 1, 1);
+	dim3    grid(THREAD_W_R, THREAD_H_R);
+	normalizeKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, objIterator, THREAD_W_R, 1, 1);
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
 	if (cudaStatus != cudaSuccess) {
@@ -1769,13 +1829,31 @@ __global__ void renderReadyKernel(EFTYPE * res, INT size, Manager3D * _man, Tria
 		INT index = 0, _index = 0;
 		INT xs, xe, ys, ye;
 		int i, j;
-		Camera3D* cam = NULL;
+		Cam3D* cam = NULL;
 		Lgt3D * lgt;
 		EFTYPE zz;
 		EFTYPE f, t, transparent, _i, _j;
 		INT line_state = 0;
 		INT line_l = 0, line_r = 0;
 		int inrange;
+		//DWORD *_image = device->_image;
+		EFTYPE* _depth = device->depth;
+		DWORD* _tango = device->tango;
+		DWORD* _trans = device->trans;
+		EFTYPE** ___shade = device->shade;
+		DWORD  ___image;
+		EFTYPE depth;
+		EFTYPE* __depth;
+		EFTYPE* __shade;
+		DWORD* __image;
+		DWORD* __tango, * __trans;
+		Vert3D n0, n1, n2, n3, r;
+		Vert3D _n0, _n1, _n2, _n3;
+		Vert3D p;
+
+
+		DWORD* _image = device->threadImage[0];
+		memset(_image, 0, sizeof(DWORD) * device->width * device->height);
 		do {
 #ifdef WIN_DEBUG
 			res[res_index++] = obj->verts.linkcount;
@@ -1822,6 +1900,113 @@ __global__ void renderReadyKernel(EFTYPE * res, INT size, Manager3D * _man, Tria
 								tgIterator[iteratorIndex].v = v;
 								iteratorIndex++;
 								v->obj = (void*)obj;
+
+
+								//step1: render the triangle
+								index = 0;
+								xs = v->xs; xe = v->xe; ys = v->ys; ye = v->ye;
+								//xs = _range == v ? v->xs : max(_range->xs, v->xs); ys = _range == v ? v->ys : max(_range->ys, v->ys);
+								//xe = _range == v ? v->xe : min(_range->xe, v->xe); ye = _range == v ? v->ye : min(_range->ye, v->ye);
+								//draw triangle contour
+								Device::Draw_Line(_image, device->width, device->height, v0->x0, v0->y0, v1->x0, v1->y0, WHITE);
+								Device::Draw_Line(_image, device->width, device->height, v1->x0, v1->y0, v->x0, v->y0, WHITE);
+								Device::Draw_Line(_image, device->width, device->height, v->x0, v->y0, v0->x0, v0->y0, WHITE);
+
+
+#ifdef WIN_DEBUG
+								if (res_index < size) {
+									res[res_index++] = ys;
+									res[res_index++] = ye;
+									res[res_index++] = xs;
+									res[res_index++] = xe;
+								}
+#endif
+
+								//get line formula
+								//v0-v1
+								Vert3D::GetLine(v1->v_s, v0->v_s, l1);
+								//v1-v
+								Vert3D::GetLine(v->v_s, v1->v_s, l);
+								//v-v0
+								Vert3D::GetLine(v0->v_s, v->v_s, l0);
+
+								EFTYPE zz_f = (v->n_r.x * v->v_c.x + v->n_r.y * v->v_c.y + v->n_r.z * v->v_c.z);
+								for (i = ys; i <= ye && i < device->height; i += 1) {
+									cam = (Cam3D*)obj->cam;
+									if (cam == NULL) {
+										break;
+									}
+
+									//little trick^_^
+									line_state = 0;
+									line_l = 0, line_r = 0;
+									if (false && device->render_linear < 0) {
+										line_l = xs;
+										line_r = xe;
+									}
+									else {
+										//trick: pre-judge
+										for (j = xs; j <= xe && j < device->width; j += 1) {
+											__image = &_image[i * device->width + j];
+											//up pulse
+											if (*__image != EP_BLACK) {
+												line_state++;
+												if (line_state == 1) {
+													line_l = j;
+												}
+												else {//if (line_state == 2) {
+													line_r = j;
+												}
+												*__image = EP_BLACK;
+											}
+										}
+									}
+									//get range x
+									EFTYPE __y = i;
+									EFTYPE __x;
+									INT _line_l1 = (INT)(l1.x * __y + l1.y);
+									INT _line_l = (INT)(l.x * __y + l.y);
+									INT _line_l0 = (INT)(l0.x * __y + l0.y);
+									EFTYPE view_h = (i - cam->offset_h) / cam->scale_h;
+									for (j = line_l; j <= line_r && j < device->width; j += 1) {
+
+										index = i * device->width + j;
+										__image = &_image[index];
+										if (device->render_linear < 0) {
+											if (j == line_l || j == line_r) {
+												*__image = obj->color;
+											}
+										}
+										else {
+											if (j >= line_l && j <= line_r) {
+												*__image = obj->color;
+											}
+										}
+										//step2: depth test
+										if (*__image != EP_BLACK) {
+											// get depth
+											//(-n.x * ((FLOAT)j - v.x) - n.y * ((FLOAT)i - v.y)) / n.z + v->z
+											n0.set((j - cam->offset_w) / cam->scale_w, view_h, 0, 1);
+											//z = Vert3D::getZ(v->n_d, v->x0, v->y0, v->z, (EFTYPE)j, (EFTYPE)i);
+											z = Vert3D::getZ(v->n_1_z, v->x, v->y, v->z, n0.x, n0.y);
+											z *= MAX_PRECISE;
+											__depth = &_depth[index];
+											if (EP_ISZERO(*__depth)) {
+												*__depth = z;
+											}
+											if (*__depth <= z) {
+												*__depth = z;
+											}
+
+											if (device->render_linear < 0) {
+												_image[index] = EP_BLACK;
+											}
+											else {
+												_image[index] = EP_BLACK;
+											}
+										}
+									}
+								}
 							}
 						}
 
@@ -2039,27 +2224,25 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 				//little trick^_^
 				line_state = 0;
 				line_l = 0, line_r = 0;
-				if (device->render_linear < 0) {
+				if (false && device->render_linear < 0) {
 					line_l = xs;
 					line_r = xe;
 				}
 				else {
 					//trick: pre-judge
-					___image = BLACK;
 					for (j = xs; j <= xe && j < device->width; j += 1) {
 						__image = &_image[i * device->width + j];
 						//up pulse
-						if (*__image != BLACK && ___image == BLACK) {
+						if (*__image != EP_BLACK) {
 							line_state++;
 							if (line_state == 1) {
 								line_l = j;
 							}
-							else {
+							else { //if (line_state == 2) {
 								line_r = j;
-								break;
 							}
+							*__image = EP_BLACK;
 						}
-						___image = *__image;
 					}
 				}
 				//get range x
@@ -2069,11 +2252,14 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 				INT _line_l = (INT)(l.x * __y + l.y);
 				INT _line_l0 = (INT)(l0.x * __y + l0.y);
 				EFTYPE view_h = (i - cam->offset_h) / cam->scale_h;
-				for (j = xs; j <= xe && j < device->width; j += 1) {
+				for (j = line_l; j <= line_r && j < device->width; j += 1) {
 
 					index = i * device->width + j;
 					__image = &_image[index];
 					if (device->render_linear < 0) {
+						if (j == line_l || j == line_r) {
+							*__image = obj->color;
+						}
 					}
 					else {
 						if (j >= line_l && j <= line_r) {
@@ -2081,19 +2267,19 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 						}
 					}
 					//step2: depth test
-					if (*__image != BLACK) {
+					if (*__image != EP_BLACK) {
 						// get depth
 						//(-n.x * ((FLOAT)j - v.x) - n.y * ((FLOAT)i - v.y)) / n.z + v->z
 						n0.set((j - cam->offset_w) / cam->scale_w, view_h, 0, 1);
 						//z = Vert3D::getZ(v->n_d, v->x0, v->y0, v->z, (EFTYPE)j, (EFTYPE)i);
 						z = Vert3D::getZ(v->n_1_z, v->x, v->y, v->z, n0.x, n0.y);
-
+						z *= MAX_PRECISE;
 						__depth = &_depth[index];
 						if (EP_ISZERO(*__depth)) {
-							*__depth = z;
+							//*__depth = z;
 						}
-						if (*__depth <= z) {
-							*__depth = z;
+						if ((int)*__depth == (int)z) {
+							//*__depth = z;
 
 							__tango = &device->tango[index];
 							__trans = &device->trans[index];
@@ -2170,7 +2356,7 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 									//*__trans = Light3D::multi(*__image, f);
 									*__trans = Light3D_add(*__image, device->tango[_index], f);
 
-									if (*__trans == BLACK) {
+									if (*__trans == EP_BLACK) {
 										//*__trans++;
 										*__trans = *__image;
 									}
@@ -2237,10 +2423,10 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 						}
 
 						if (device->render_linear < 0) {
-							_image[index] = BLACK;
+							_image[index] = EP_BLACK;
 						}
 						else {
-							_image[index] = BLACK;
+							_image[index] = EP_BLACK;
 						}
 					}
 				}
@@ -2252,10 +2438,10 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 			for (j = trans_w0; j <= trans_w1 && j < device->width; j++) {
 				index = i * device->width + j;
 				__trans = &device->trans[index];
-				if (*__trans != BLACK) {
+				if (*__trans != EP_BLACK) {
 					__tango = &device->tango[index];
 					*__tango = *__trans;
-					*__trans = BLACK;
+					*__trans = EP_BLACK;
 				}
 			}
 		}
@@ -2279,7 +2465,7 @@ cudaError_t renderWithCuda(EFTYPE * res, int res_size, Manager3D * man, DWORD * 
 	}
 
 	//raytracing
-	if (0) {
+	if (1) {
 		cudaStatus = cudaMemset(tango, 0, img_size * sizeof(DWORD));
 		if (cudaStatus != cudaStatus) {
 			fprintf(stderr, "cudaMemset failed!");
@@ -2290,7 +2476,7 @@ cudaError_t renderWithCuda(EFTYPE * res, int res_size, Manager3D * man, DWORD * 
 		//<<<块并行数，线程并行数，每个块使用的共享内存大小，流对象>>>
 		// Launch a kernel on the GPU with one thread for each element.
 		dim3    grid(THREAD_W, THREAD_H);
-		renderRayTracing << <grid, 1 >> > (dev_resf, res_size, dev_man, tgIterator, THREAD_W, WIN_WIDTH / THREAD_W, WIN_HEIGHT / THREAD_H, _device, verts_pool);
+		renderRayTracing << <grid, 1>> > (dev_resf, res_size, dev_man, dev_vman, tgIterator, THREAD_W, WIN_WIDTH / THREAD_W, WIN_HEIGHT / THREAD_H, _device, verts_pool);
 		//多线程由于互斥内存太多，不便于并行
 		//dim3    grid(THREAD_W, THREAD_H);
 		//renderKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, tgIterator, THREAD_W, 1, 1, _device);
@@ -2354,7 +2540,7 @@ cudaError_t renderWithCuda(EFTYPE * res, int res_size, Manager3D * man, DWORD * 
 		//<<<块并行数，线程并行数，每个块使用的共享内存大小，流对象>>>
 		// Launch a kernel on the GPU with one thread for each element.
 		dim3    grid(1, 1);
-		renderKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, tgIterator, THREAD_W, THREAD_W, THREAD_H, _device);
+		renderKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, tgIterator, THREAD_W_R, THREAD_W_R, THREAD_H_R, _device);
 		//多线程由于互斥内存太多，不便于并行
 		//dim3    grid(THREAD_W, THREAD_H);
 		//renderKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, tgIterator, THREAD_W, 1, 1, _device);
@@ -2453,7 +2639,7 @@ VOID onPaint(HWND hWnd)
 	}
 	isrefresh = -1;
 	// Place draw code here
-	EP_SetColor(BLACK);
+	EP_SetColor(EP_BLACK);
 	EP_ClearDevice();
 	//Render in device buffer
 	//if (device.render_raytracing > 0) {
@@ -2465,7 +2651,7 @@ VOID onPaint(HWND hWnd)
 	//		for (i = 0; i < device.width; i++) {
 	//			for (j = 0; j < device.height; j++){
 	//				index = j *  device.width + i;
-	//				if (device.raytracing[index] != BLACK)
+	//				if (device.raytracing[index] != EP_BLACK)
 	//				{
 	//					//::SetPixel(memHDC, i, j, device.tango[index]);
 	//					_tango[index] = device.raytracing[index];
@@ -2492,7 +2678,7 @@ VOID onPaint(HWND hWnd)
 	//	for (i = 0; i < device.width; i++) {
 	//		for (j = 0; j < device.height; j++){
 	//			index = j *  device.width + i;
-	//			if (device.raytracing[index] != BLACK)
+	//			if (device.raytracing[index] != EP_BLACK)
 	//			{
 	//				//::SetPixel(memHDC, i, j, device.tango[index]);
 	//				_tango[index] = device.raytracing[index];
@@ -2529,7 +2715,7 @@ VOID onPaint(HWND hWnd)
 		//for (i = 0; i < device.width; i++) {
 		//	for (j = 0; j < device.height; j++){
 		//		index = j *  device.width + i;
-		//		if (device.tango[index] != BLACK)
+		//		if (device.tango[index] != EP_BLACK)
 		//		{
 		//			//::SetPixel(memHDC, i, j, device.tango[index]);
 		//			_tango[index] = device.tango[index];
@@ -2547,7 +2733,7 @@ VOID onPaint(HWND hWnd)
 			if (index >= WIN_WIDTH * WIN_HEIGHT) {
 				break;
 			}
-			if (res[index] != BLACK)
+			if (res[index] != EP_BLACK)
 			{
 				//::SetPixel(memHDC, i, j, device.tango[index]);
 				_tango[index] = res[index];
@@ -3015,16 +3201,8 @@ int MainLoop() {
 		return 1;
 	}
 
-
-#ifdef WIN_DEBUG
-	EP_Init(WIN_WIDTH, WIN_HEIGHT, 1);
-#else
-	EP_Init(WIN_WIDTH, WIN_HEIGHT, 0);
-#endif
-	//EP_Init(-1, -1);
-
 	//取消最小化按钮，使用最小化会造成窗口假死
-	SetWindowLong(GetHWnd(), GWL_STYLE, GetWindowLong(EP_GetWnd(), GWL_STYLE) & ~WS_MINIMIZEBOX);
+	SetWindowLong(EP_GetWnd(), GWL_STYLE, GetWindowLong(EP_GetWnd(), GWL_STYLE) & ~WS_MINIMIZEBOX);
 
 	INT count = 0;
 	char str[100];
@@ -3090,7 +3268,7 @@ int MainLoop() {
 			onTimer();
 		}
 		//delay_ms(100);
-		EP_RenderFlush();
+		EP_RenderFlush(10000);
 		sprintf_s(str, "%s", "Engine3D");
 		::SetWindowText(EP_GetWnd(), str);
 	} while (1);
@@ -3110,6 +3288,13 @@ int main()
 {
 	///////////////////////////
 
+
+#ifdef WIN_DEBUG
+	EP_Init(WIN_WIDTH, WIN_HEIGHT, 1);
+#else
+	EP_Init(WIN_WIDTH, WIN_HEIGHT, 0);
+#endif
+	//EP_Init(-1, -1);
 	// Host test
 #ifndef RUN_DEVICE
 	_VObjPoolImp(&vobjPoolImp);

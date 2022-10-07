@@ -22,6 +22,9 @@ struct Texture {
 	INT height;
 	DWORD *texture;
 	EIMAGE image;
+	//TODO 和TextureLocal大小不同，增加空函数LoadTexture和LoadTextureEx，否则copy不成功
+	void (*LoadTexture)(Texture* that, INT w, INT h, INT n);
+	void (*LoadTextureEx)(Texture* that, char* filename);
 	void (*destory)(Texture * that);
 	/////////////////////////////////////
 };
@@ -156,12 +159,14 @@ public:
 		//and reload all the host functions to device function
 		_TexturePoolImpReload(this->texturePoolImp);
 		for (int i = 0; i < MAX_TEXTURE; i++) {
-			if (this->texturePoolImp->pool[i].texture) {
+			Texture& t = this->texturePoolImp->pool[i];
+			if (t.texture) {
+				//t.uniqueID = i;
 				for (int j = 0; j < MAX_TEXTURE_LINK; j ++) {
-					this->texturePoolImp->pool[i].prev[j] = NULL;
-					this->texturePoolImp->pool[i].next[j] = NULL;
+					t.prev[j] = NULL;
+					t.next[j] = NULL;
 				}
-				this->textures.insertLink(&this->textures, &this->texturePoolImp->pool[i], NULL, NULL);
+				this->textures.insertLink(&this->textures, &t, NULL, NULL);
 			}
 		}
 	}

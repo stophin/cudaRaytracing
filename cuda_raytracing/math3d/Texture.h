@@ -29,13 +29,13 @@ struct TextureLocal {
 	void (*destory)(TextureLocal * that);
 	/////////////////////////////////////
 };
-void TextureLocal_destory(TextureLocal * that) {
+__PLATFORM void TextureLocal_destory(TextureLocal * that) {
 	if (that->texture) {
 		delete[] that->texture;
 		that->texture = NULL;
 	}
 }
-void TextureLocal_LoadTextureEx(TextureLocal* that, char *filename) {
+__PLATFORM void TextureLocal_LoadTextureEx(TextureLocal* that, char *filename) {
 	if (that->texture) {
 		return;
 	}
@@ -56,7 +56,7 @@ void TextureLocal_LoadTextureEx(TextureLocal* that, char *filename) {
 		}
 	}
 }
-void TextureLocal_LoadTexture(TextureLocal* that,INT w, INT h, INT n) {
+__PLATFORM void TextureLocal_LoadTexture(TextureLocal* that,INT w, INT h, INT n) {
 	if (that->texture) {
 		return;
 	}
@@ -79,7 +79,7 @@ void TextureLocal_LoadTexture(TextureLocal* that,INT w, INT h, INT n) {
 		}
 	}
 }
-TextureLocal * _TextureLocal(TextureLocal * that){
+__PLATFORM TextureLocal * _TextureLocal(TextureLocal * that){
 	that->prev = that->_prev;
 	that->next = that->_next;
 	_MultiLinkLocalElement(&that->super, MAX_TEXTURELOCAL_LINK);
@@ -103,10 +103,10 @@ typedef struct TextureLocalPool TextureLocalPool;
 struct TextureLocalPool {
 	__SUPERLOCAL(ElementLocalPool, TextureLocalPool, TextureLocal);
 };
-TextureLocal * TextureLocalPool_at(TextureLocalPool * that, int index) {
+__PLATFORM TextureLocal * TextureLocalPool_at(TextureLocalPool * that, int index) {
 	return &that->pool[index];
 }
-void _TextureLocalPool(TextureLocalPool * that, TextureLocal * pool, UMAP * map, int size){
+__PLATFORM void _TextureLocalPool(TextureLocalPool * that, TextureLocal * pool, UMAP * map, int size){
 	_ElementLocalPool(&that->super, (MultiLinkLocalElement*)pool, map, size);
 
 	that->at = TextureLocalPool_at;
@@ -121,7 +121,7 @@ struct TextureLocalPoolImp {
 
 	TextureLocalPool textPool;
 };
-TextureLocalPoolImp * _TextureLocalPoolImp(TextureLocalPoolImp *that) {
+__PLATFORM TextureLocalPoolImp * _TextureLocalPoolImp(TextureLocalPoolImp *that) {
 
 	for (int i = 0; i < MAX_TEXTURELOCAL; i++) {
 		_TextureLocal(&that->pool[i]);
@@ -140,7 +140,7 @@ struct TextureLocalMan{
 	void (*clearLink)(TextureLocalMan * that);
 	////////////////////////////
 };
-void TextureLocalMan_clearlink(TextureLocalMan * that){
+__PLATFORM void TextureLocalMan_clearlink(TextureLocalMan * that){
 	if (that->link) {
 		TextureLocal * temp = that->link;
 		do {
@@ -156,7 +156,7 @@ void TextureLocalMan_clearlink(TextureLocalMan * that){
 		} while (temp);
 	}
 }
-TextureLocalMan * _TextureLocalMan(TextureLocalMan * that, int index, TextureLocalPoolImp * poolImp){
+__PLATFORM TextureLocalMan * _TextureLocalMan(TextureLocalMan * that, int index, TextureLocalPoolImp * poolImp){
 	_MultiLinkLocalBase(&that->super, index);
 
 	that->textPool = &poolImp->textPool;

@@ -21,6 +21,7 @@
 typedef struct MultiLinkLocalElement {
 #define MultiLinkLocalElementTemplate(T)\
 	int linkcount;\
+	int linkindex;\
 	int uniqueID;\
 	T ** prev;\
 	T ** next;\
@@ -88,14 +89,14 @@ typedef struct ElementLocalPool {
 
 
 ///////////////////////////////////////////////////////////
- void MultiLinkLocalElement_clear(MultiLinkLocalElement * that) {
+__PLATFORM void MultiLinkLocalElement_clear(MultiLinkLocalElement * that) {
 	int i;
 	for (i = 0; i < that->linkcount; i++) {
 		that->prev[i] = NULL;
 		that->next[i] = NULL;
 	}
 }
- MultiLinkLocalElement * MultiLinkLocalElement_free(MultiLinkLocalElement * that) {
+__PLATFORM MultiLinkLocalElement * MultiLinkLocalElement_free(MultiLinkLocalElement * that) {
 	int i;
 	for (i = 0; i < that->linkcount; i++) {
 		if (that->prev[i] != NULL || that->next[i] != NULL) {
@@ -104,7 +105,7 @@ typedef struct ElementLocalPool {
 	}
 	return NULL;
 }
- void _MultiLinkLocalElement(MultiLinkLocalElement * that, int linkcount) {
+__PLATFORM void _MultiLinkLocalElement(MultiLinkLocalElement * that, int linkcount) {
 	that->linkcount = linkcount;
 
 	that->clear = MultiLinkLocalElement_clear;
@@ -113,7 +114,7 @@ typedef struct ElementLocalPool {
 
 	that->clear(that);
 }
-void _MultiLinkLocalElementEx(MultiLinkLocalElement * that, int linkcount) {
+__PLATFORM void _MultiLinkLocalElementEx(MultiLinkLocalElement * that, int linkcount) {
 	that->linkcount = linkcount;
 
 	that->clear = MultiLinkLocalElement_clear;
@@ -125,7 +126,7 @@ void _MultiLinkLocalElementEx(MultiLinkLocalElement * that, int linkcount) {
 ///////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////
- MultiLinkLocalElement * MultiLinkLocalBase_removeLink(MultiLinkLocalBase * that, MultiLinkLocalElement * link) {
+__PLATFORM MultiLinkLocalElement * MultiLinkLocalBase_removeLink(MultiLinkLocalBase * that, MultiLinkLocalElement * link) {
 
 	MultiLinkLocalElement * before, *after;
 	if (link == NULL)
@@ -161,7 +162,7 @@ void _MultiLinkLocalElementEx(MultiLinkLocalElement * that, int linkcount) {
 
 	return link;
 }
-MultiLinkLocalElement * MultiLinkLocalBase_getLink(MultiLinkLocalBase * that, int uniqueID) {
+__PLATFORM MultiLinkLocalElement * MultiLinkLocalBase_getLink(MultiLinkLocalBase * that, int uniqueID) {
 	if (that->link == NULL) {
 		return NULL;
 	}
@@ -174,7 +175,7 @@ MultiLinkLocalElement * MultiLinkLocalBase_getLink(MultiLinkLocalBase * that, in
 	} while(temp && temp != that->link);
 	return NULL;
 }
- MultiLinkLocalElement * MultiLinkLocalBase_get(MultiLinkLocalBase * that, int index) {
+__PLATFORM MultiLinkLocalElement * MultiLinkLocalBase_get(MultiLinkLocalBase * that, int index) {
 	MultiLinkLocalElement * temp;
 	if (that->link == NULL)
 	{
@@ -188,7 +189,7 @@ MultiLinkLocalElement * MultiLinkLocalBase_getLink(MultiLinkLocalBase * that, in
 	return temp;
 }
 
- MultiLinkLocalElement * MultiLinkLocalBase_insertLink(MultiLinkLocalBase * that, MultiLinkLocalElement * link, MultiLinkLocalElement * before, MultiLinkLocalElement * after) {
+__PLATFORM MultiLinkLocalElement * MultiLinkLocalBase_insertLink(MultiLinkLocalBase * that, MultiLinkLocalElement * link, MultiLinkLocalElement * before, MultiLinkLocalElement * after) {
 	MultiLinkLocalElement * _link;
 	if (link == NULL)
 	{
@@ -255,21 +256,21 @@ MultiLinkLocalElement * MultiLinkLocalBase_getLink(MultiLinkLocalBase * that, in
 	}
 	return link;
 }
- MultiLinkLocalElement * MultiLinkLocalBase_prev(MultiLinkLocalBase *that, MultiLinkLocalElement * link) {
+__PLATFORM MultiLinkLocalElement * MultiLinkLocalBase_prev(MultiLinkLocalBase *that, MultiLinkLocalElement * link) {
 	if (link == NULL)
 	{
 		return NULL;
 	}
 	return link->prev[that->linkindex];
 }
- MultiLinkLocalElement * MultiLinkLocalBase_next(MultiLinkLocalBase *that, MultiLinkLocalElement * link) {
+__PLATFORM MultiLinkLocalElement * MultiLinkLocalBase_next(MultiLinkLocalBase *that, MultiLinkLocalElement * link) {
 	if (link == NULL)
 	{
 		return NULL;
 	}
 	return link->next[that->linkindex];
 }
- void _MultiLinkLocalBase(MultiLinkLocalBase * that, int linkindex) {
+__PLATFORM void _MultiLinkLocalBase(MultiLinkLocalBase * that, int linkindex) {
 	that->linkcount = 0;
 	that->linkindex = linkindex;
 	that->link = NULL;
@@ -281,7 +282,7 @@ MultiLinkLocalElement * MultiLinkLocalBase_getLink(MultiLinkLocalBase * that, in
 	that->get = MultiLinkLocalBase_get;
 	that->getLink = MultiLinkLocalBase_getLink;
 }
-void _MultiLinkLocalBaseEx(MultiLinkLocalBase * that, int linkindex) {
+__PLATFORM void _MultiLinkLocalBaseEx(MultiLinkLocalBase * that, int linkindex) {
 	that->linkcount = 0;
 	that->linkindex = linkindex;
 	that->link = NULL;
@@ -296,7 +297,7 @@ void _MultiLinkLocalBaseEx(MultiLinkLocalBase * that, int linkindex) {
 ///////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////
- MultiLinkLocalElement * ElementLocalPool_at(ElementLocalPool * that, int index) {
+__PLATFORM MultiLinkLocalElement * ElementLocalPool_at(ElementLocalPool * that, int index) {
 	// Inherit struct must override this function
 	// because the size of the type of pool is different
 	// Note: in this kind of inherit, be careful when
@@ -307,23 +308,32 @@ void _MultiLinkLocalBaseEx(MultiLinkLocalBase * that, int linkindex) {
 	// override any get/set function in inherit struct
 	return &that->pool[index];
 }
- MultiLinkLocalElement * ElementLocalPool_get(ElementLocalPool * that) {
+__PLATFORM MultiLinkLocalElement * ElementLocalPool_get(ElementLocalPool * that) {
 	int i, j, index;
 	for (i = 0, index = 0; i < that->msize && index < that->size; i++, index += MAP_SHIFT) {
 		if (that->map[i] & MAP_MASK) {
 			for (j = 0; j < MAP_SHIFT && index < that->size; j++, index++) {
 				if (that->map[i] & (0x01 << j)) {
 					that->map[i] &= ~(0x01 << j);
-					return that->at(that, index);
+					MultiLinkLocalElement * ret = that->at(that, index);
+					ret->linkindex = index;
+					return ret;
 				}
 			}
 		}
 	}
 	return NULL;
 }
- void ElementLocalPool_back(ElementLocalPool * that, MultiLinkLocalElement * o){
+__PLATFORM void ElementLocalPool_back(ElementLocalPool * that, MultiLinkLocalElement * o){
 	int i, j, index;
 	if (o == NULL) {
+		return;
+	}
+	if (o->linkindex >= 0 && o->linkindex < that->size) {
+		index = o->linkindex;
+		i = index / MAP_SHIFT;
+		j = index - i * MAP_SHIFT;
+		that->map[i] |= (0x01 << j);
 		return;
 	}
 	for (index = 0; index < that->size; index++) {
@@ -335,7 +345,7 @@ void _MultiLinkLocalBaseEx(MultiLinkLocalBase * that, int linkindex) {
 		}
 	}
 }
- void _ElementLocalPool(ElementLocalPool * that, MultiLinkLocalElement * pool, UMAP * map, int size) {
+__PLATFORM void _ElementLocalPool(ElementLocalPool * that, MultiLinkLocalElement * pool, UMAP * map, int size) {
 	int i;
 	if (size > POOL_MAX) {
 		//size = POOL_MAX;
@@ -357,7 +367,7 @@ void _MultiLinkLocalBaseEx(MultiLinkLocalBase * that, int linkindex) {
 		that->map[i] = MAP_MASK;
 	}
 }
-void _ElementLocalPoolEx(ElementLocalPool * that, MultiLinkLocalElement * pool, UMAP * map, int size) {
+__PLATFORM void _ElementLocalPoolEx(ElementLocalPool * that, MultiLinkLocalElement * pool, UMAP * map, int size) {
 	int i;
 	if (size > POOL_MAX) {
 		//size = POOL_MAX;
@@ -380,6 +390,5 @@ void _ElementLocalPoolEx(ElementLocalPool * that, MultiLinkLocalElement * pool, 
 	}
 }
 ///////////////////////////////////////////////////////////
-
 
 #endif

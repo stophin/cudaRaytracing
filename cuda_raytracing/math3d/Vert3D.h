@@ -84,14 +84,14 @@ struct Vert3D {
 
 	_PLATFORM Vert3D& normalize() {
 		EFTYPE x = this->x, y = this->y, z = this->z, w = this->w;
-		EFTYPE d = sqrt(x * x + y * y + z * z);
-		this->x /= d;
-		this->y /= d;
-		this->z /= d;
-		//EFTYPE d = Q_rsqrt(x * x + y * y + z * z);
-		//this->x *= d;
-		//this->y *= d;
-		//this->z *= d;
+		//EFTYPE d = sqrt(x * x + y * y + z * z);
+		//this->x /= d;
+		//this->y /= d;
+		//this->z /= d;
+		EFTYPE d = EPoint::Q_rsqrt(x * x + y * y + z * z);
+		this->x *= d;
+		this->y *= d;
+		this->z *= d;
 
 		return *this;
 	}
@@ -99,14 +99,14 @@ struct Vert3D {
 	// module of cross product
 	_PLATFORM EFTYPE operator &(const Vert3D& v) const {
 		EFTYPE x = this->x, y = this->y, z = this->z, w = this->w;
-		EFTYPE ra = sqrt(x * x + y * y + z * z);
-		EFTYPE rb = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+		//EFTYPE ra = sqrt(x * x + y * y + z * z);
+		//EFTYPE rb = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 
-		return (x * v.x + y * v.y + z * v.z) / (ra * rb);
-		//EFTYPE ra = Q_rsqrt(x * x + y * y + z * z);
-		//EFTYPE rb = Q_rsqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+		//return (x * v.x + y * v.y + z * v.z) / (ra * rb);
+		EFTYPE ra = EPoint::Q_rsqrt(x * x + y * y + z * z);
+		EFTYPE rb = EPoint::Q_rsqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 
-		//return (x * v.x + y * v.y + z * v.z) * (ra * rb);
+		return (x * v.x + y * v.y + z * v.z) * (ra * rb);
 	}
 
 	// dot product
@@ -177,13 +177,13 @@ struct Vert3D {
 		return (INT)(p1.x > p2.x ? (p2.x > p3.x ? p3.x : p2.x) : (p1.x > p3.x ? p3.x : p1.x));
 	}
 	_PLATFORM static INT get_maxx(const Vert3D& p1, const Vert3D& p2, const Vert3D& p3) {
-		return (INT)(p1.x < p2.x ? (p2.x < p3.x ? p3.x : p2.x) : (p1.x < p3.x ? p3.x : p1.x));
+		return (INT)ceil((p1.x < p2.x ? (p2.x < p3.x ? p3.x : p2.x) : (p1.x < p3.x ? p3.x : p1.x)));
 	}
 	_PLATFORM static INT get_miny(const Vert3D& p1, const Vert3D& p2, const Vert3D& p3) {
 		return (INT)(p1.y > p2.y ? (p2.y > p3.y ? p3.y : p2.y) : (p1.y > p3.y ? p3.y : p1.y));
 	}
 	_PLATFORM static INT get_maxy(const Vert3D& p1, const Vert3D& p2, const Vert3D& p3) {
-		return (INT)(p1.y < p2.y ? (p2.y < p3.y ? p3.y : p2.y) : (p1.y < p3.y ? p3.y : p1.y));
+		return (INT)ceil((p1.y < p2.y ? (p2.y < p3.y ? p3.y : p2.y) : (p1.y < p3.y ? p3.y : p1.y)));
 	}
 	_PLATFORM static EFTYPE getZ(const Vert3D& n, EFTYPE x0, EFTYPE y0, EFTYPE z0, EFTYPE x, EFTYPE y) {
 		EFTYPE z_1 = 1;
@@ -295,10 +295,13 @@ struct Vert3D {
 		EFTYPE temp3 = g * f - d * i;
 		EFTYPE temp5 = d * h - e * g;
 		//make sure M is not zero
-		if (EP_ISZERO(temp1) && EP_ISZERO(temp3) && EP_ISZERO(temp5)) {
+		//if (EP_ISZERO(temp1) && EP_ISZERO(temp3) && EP_ISZERO(temp5)) {
+		//	return 0;
+		//}
+		M = a * (temp1)+ b * (temp3)+ c * (temp5);
+		if (EP_ISZERO(M)) {
 			return 0;
 		}
-		M = a * (temp1)+ b * (temp3)+ c * (temp5);
 		M_1 = 1.0 / M;
 
 		EFTYPE j = va.x - vo.x, k = va.y - vo.y, l = va.z - vo.z;
@@ -412,7 +415,7 @@ _PLATFORM VObj * _VObj(VObj * that, EFTYPE x, EFTYPE y, EFTYPE z){
 	that->n_w.init();
 
 	that->aabb[0].set(-EP_MAX, -EP_MAX, -EP_MAX, 1);
-	that->aabb[1].set(EP_MAX, EP_MAX, -EP_MAX, 1);
+	that->aabb[1].set(EP_MAX, EP_MAX, EP_MAX, 1);
 	/////////////////////////////////////
 
 	return that;

@@ -32,8 +32,8 @@ _PLATFORM EFTYPE * depth;
 __device__ int *a;
 #define THREAD_W		50
 #define THREAD_H		50
-#define THREAD_W_R		10
-#define THREAD_H_R		10
+#define THREAD_W_R		30
+#define THREAD_H_R		30
 #define MAX_ITERATOR	THREAD_W_R * THREAD_H_R
 #define WIN_WIDTH	800
 #define WIN_HEIGHT	600
@@ -847,7 +847,7 @@ __global__ void initializeKernel(EFTYPE * res, INT size, Manager3D * _man, VObjP
 	_OctPoolImp(octPoolImp, objPoolImp, vobjPoolImp);
 	_Group3DPoolImp(group3DPoolImp, objPoolImp, vobjPoolImp);
 	man.Init();
-	Camera3D * cam = &man.addCamera(50, 50, 50, 1000, 90, 90);
+	Camera3D * cam = &man.addCamera(50, 50, 50, 1000, 70, 70);
 	man.setCameraRange(500, 240, 126, 126);
 	cam->_move(cam, 0, 0, -200);
 
@@ -1791,7 +1791,244 @@ Error :
 	return cudaStatus;
 }
 
+__global__ void renderShaderVertexKernel(EFTYPE* res, INT size, Manager3D* _man, Obj3D** objIterator, INT width, INT iteratorW, INT iteratorH)
+{
+#ifdef RUN_DEVICE
+	int index = 0;
 
+	Manager3D& man = *_man;
+	Obj3D* obj = NULL;
+	Cam3D* cam = NULL;
+
+	INT iteratorIndex = 0;
+	int iteratorIndexX = blockIdx.x * iteratorW;
+	int iteratorIndexY = blockIdx.y * iteratorH;
+
+	cam = man.cams.link;
+	res[99] = (DWORD)cam;
+
+	Obj3D* _obj = NULL;
+	for (int i = iteratorIndexX; i < iteratorIndexX + iteratorW; i++) {
+		for (int j = iteratorIndexY; j < iteratorIndexY + iteratorH; j++) {
+			Obj3D* obj = objIterator[j * width + i];
+
+			if (obj) {
+				if (!_obj) _obj = obj;
+				obj->shaderVertex(obj);
+				res[50 + j * width + i] = obj->debugger;
+			}
+		}
+	}
+
+#ifdef WIN_DEBUG
+
+	if (cam) {
+		res[index++] = cam->M.mx.x + cam->M.mx.y + cam->M.mx.z + cam->M.mx.w + cam->M.my.x + cam->M.my.y + cam->M.my.z + cam->M.my.w;
+		res[index++] = cam->_M.Ms.mx.x + cam->_M.Ms.mx.y + cam->_M.Ms.mx.z + cam->_M.Ms.mx.w + cam->_M.Ms.my.x + cam->_M.Ms.my.y + cam->_M.Ms.my.z + cam->_M.Ms.my.w;
+		res[index++] = cam->_M.M->mx.x + cam->_M.M->mx.y + cam->_M.M->mx.z + cam->_M.M->mx.w + cam->_M.M->my.x + cam->_M.M->my.y + cam->_M.M->my.z + cam->_M.M->my.w;
+		res[index++] = cam->_M.Mm.mx.x + cam->_M.Mm.mx.y + cam->_M.Mm.mx.z + cam->_M.Mm.mx.w + cam->_M.Mm.my.x + cam->_M.Mm.my.y + cam->_M.Mm.my.z + cam->_M.Mm.my.w;
+		res[index++] = cam->_M.Mrx.mx.x + cam->_M.Mrx.mx.y + cam->_M.Mrx.mx.z + cam->_M.Mrx.mx.w + cam->_M.Mrx.my.x + cam->_M.Mrx.my.y + cam->_M.Mrx.my.z + cam->_M.Mrx.my.w;
+	}
+
+	obj = man.objs.link;
+	if (obj) {
+		res[index++] = obj->M.mx.x + obj->M.mx.y + obj->M.mx.z + obj->M.mx.w + obj->M.my.x + obj->M.my.y + obj->M.my.z + obj->M.my.w;
+		res[index++] = obj->_M.Ms.mx.x + obj->_M.Ms.mx.y + obj->_M.Ms.mx.z + obj->_M.Ms.mx.w + obj->_M.Ms.my.x + obj->_M.Ms.my.y + obj->_M.Ms.my.z + obj->_M.Ms.my.w;
+		res[index++] = obj->_M.M->mx.x + obj->_M.M->mx.y + obj->_M.M->mx.z + obj->_M.M->mx.w + obj->_M.M->my.x + obj->_M.M->my.y + obj->_M.M->my.z + obj->_M.M->my.w;
+		res[index++] = obj->_M.Mm.mx.x + obj->_M.Mm.mx.y + obj->_M.Mm.mx.z + obj->_M.Mm.mx.w + obj->_M.Mm.my.x + obj->_M.Mm.my.y + obj->_M.Mm.my.z + obj->_M.Mm.my.w;
+		res[index++] = obj->_M.Mrx.mx.x + obj->_M.Mrx.mx.y + obj->_M.Mrx.mx.z + obj->_M.Mrx.mx.w + obj->_M.Mrx.my.x + obj->_M.Mrx.my.y + obj->_M.Mrx.my.z + obj->_M.Mrx.my.w;
+	}
+
+	res[index++] = 1111111111111;
+	res[index++] = blockDim.x;
+	res[index++] = iteratorIndexX;
+	res[index++] = iteratorIndexY;
+	res[index++] = (DWORD)&man;
+	res[index++] = man.initialized;
+	res[index++] = man.objs.linkcount;
+	res[index++] = (DWORD)man.objs.link;
+	res[index++] = 1111111111111;
+
+	obj = man.objs.link;
+	if (obj) {
+		do {
+
+			VObj* v = obj->verts.link;
+			if (v) {
+				do {
+
+					res[index++] = v->v_c.x;
+					res[index++] = v->v_c.y;
+					res[index++] = v->v_c.z;
+					res[index++] = v->v_c.w;
+
+					v = obj->verts.next(&obj->verts, v);
+				} while (v && v != obj->verts.link);
+			}
+
+			obj = man.objs.next(&man.objs, obj);
+		} while (obj && obj != man.objs.link);
+	}
+#endif
+#endif
+}
+
+__global__ void shaderVertexKernel(EFTYPE* res, INT size, Manager3D* _man, Obj3D** objIterator, INT iteratorSize, EFTYPE ax, EFTYPE ay, EFTYPE az)
+{
+#ifdef RUN_DEVICE
+	int index = 0;
+
+	Manager3D& man = *_man;
+	Obj3D* obj = NULL;
+	Cam3D* cam = NULL;
+
+	INT iteratorIndex = 0;
+	obj = man.objs.link;
+	if (obj) {
+		do {
+			if (iteratorIndex >= iteratorSize) {
+				break;
+			}
+			objIterator[iteratorIndex++] = obj;
+
+			obj = man.objs.next(&man.objs, obj);
+		} while (obj && obj != man.objs.link);
+	}
+	iteratorIndex = 0;
+
+#ifdef WIN_DEBUG
+
+	if (cam) {
+		res[index++] = cam->M.mx.x + cam->M.mx.y + cam->M.mx.z + cam->M.mx.w + cam->M.my.x + cam->M.my.y + cam->M.my.z + cam->M.my.w;
+		res[index++] = cam->_M.Ms.mx.x + cam->_M.Ms.mx.y + cam->_M.Ms.mx.z + cam->_M.Ms.mx.w + cam->_M.Ms.my.x + cam->_M.Ms.my.y + cam->_M.Ms.my.z + cam->_M.Ms.my.w;
+		res[index++] = cam->_M.M->mx.x + cam->_M.M->mx.y + cam->_M.M->mx.z + cam->_M.M->mx.w + cam->_M.M->my.x + cam->_M.M->my.y + cam->_M.M->my.z + cam->_M.M->my.w;
+		res[index++] = cam->_M.Mm.mx.x + cam->_M.Mm.mx.y + cam->_M.Mm.mx.z + cam->_M.Mm.mx.w + cam->_M.Mm.my.x + cam->_M.Mm.my.y + cam->_M.Mm.my.z + cam->_M.Mm.my.w;
+		res[index++] = cam->_M.Mrx.mx.x + cam->_M.Mrx.mx.y + cam->_M.Mrx.mx.z + cam->_M.Mrx.mx.w + cam->_M.Mrx.my.x + cam->_M.Mrx.my.y + cam->_M.Mrx.my.z + cam->_M.Mrx.my.w;
+	}
+
+	obj = man.objs.link;
+	if (obj) {
+		res[index++] = obj->M.mx.x + obj->M.mx.y + obj->M.mx.z + obj->M.mx.w + obj->M.my.x + obj->M.my.y + obj->M.my.z + obj->M.my.w;
+		res[index++] = obj->_M.Ms.mx.x + obj->_M.Ms.mx.y + obj->_M.Ms.mx.z + obj->_M.Ms.mx.w + obj->_M.Ms.my.x + obj->_M.Ms.my.y + obj->_M.Ms.my.z + obj->_M.Ms.my.w;
+		res[index++] = obj->_M.M->mx.x + obj->_M.M->mx.y + obj->_M.M->mx.z + obj->_M.M->mx.w + obj->_M.M->my.x + obj->_M.M->my.y + obj->_M.M->my.z + obj->_M.M->my.w;
+		res[index++] = obj->_M.Mm.mx.x + obj->_M.Mm.mx.y + obj->_M.Mm.mx.z + obj->_M.Mm.mx.w + obj->_M.Mm.my.x + obj->_M.Mm.my.y + obj->_M.Mm.my.z + obj->_M.Mm.my.w;
+		res[index++] = obj->_M.Mrx.mx.x + obj->_M.Mrx.mx.y + obj->_M.Mrx.mx.z + obj->_M.Mrx.mx.w + obj->_M.Mrx.my.x + obj->_M.Mrx.my.y + obj->_M.Mrx.my.z + obj->_M.Mrx.my.w;
+	}
+
+	res[index++] = 11111111111111;
+	res[index++] = (DWORD)man.cams.link;
+	res[index++] = iteratorSize;
+	res[index++] = (DWORD)&man;
+	res[index++] = man.initialized;
+	res[index++] = man.objs.linkcount;
+	res[index++] = (DWORD)man.objs.link;
+	res[index++] = 11111111111111;
+
+	res[index++] = (DWORD)objIterator[iteratorIndex++];
+	res[index++] = (DWORD)objIterator[iteratorIndex++];
+#endif
+#endif
+
+}
+
+// Helper function for using CUDA
+cudaError_t shaderVertexWithCuda(EFTYPE* res, int res_size, Manager3D* man, EFTYPE ax, EFTYPE ay, EFTYPE az)
+{
+	cudaError_t cudaStatus;
+
+	/////////////////////////////////////////
+	//
+	cudaStatus = cudaMemset(dev_resf, 0, sizeof(EFTYPE) * res_size);
+	if (cudaStatus != cudaStatus) {
+		fprintf(stderr, "cudaMemset failed!");
+		goto Error7;
+	}
+	//核函数参数：
+	//<<<块并行数，线程并行数，每个块使用的共享内存大小，流对象>>>
+	// Launch a kernel on the GPU with one thread for each element.
+	shaderVertexKernel << <1, 1 >> > (dev_resf, res_size, dev_man, objIterator, MAX_ITERATOR, ax, ay, az);
+
+	// Check for any errors launching the kernel
+	cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "shaderVertexKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		goto Error7;
+	}
+
+	// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	// any errors encountered during the launch.
+	cudaStatus = cudaDeviceSynchronize();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching shaderVertexKernel!\n", cudaStatus);
+		goto Error7;
+	}
+
+#ifdef WIN_DEBUG
+	///////////////////////////////////////
+	// Copy output vector from GPU buffer to host memory.
+	cudaStatus = cudaMemcpy(res, dev_resf, res_size * sizeof(EFTYPE), cudaMemcpyDeviceToHost);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy failed!");
+		goto Error7;
+	}
+	///////////////////////////////////////
+	DEBUG("旋转:");
+	for (int i = 0; i < MAX_ITERATOR; i++) {
+		DEBUG("%.2f->", res[i]);
+	}
+	DEBUG("\n");
+
+	/////////////////////////////////////////
+	//
+	cudaStatus = cudaMemset(dev_resf, 0, sizeof(EFTYPE) * res_size);
+	if (cudaStatus != cudaStatus) {
+		fprintf(stderr, "cudaMemset failed!");
+		goto Error7;
+	}
+#endif
+	//核函数参数：
+	//<<<块并行数，线程并行数，每个块使用的共享内存大小，流对象>>>
+	// Launch a kernel on the GPU with one thread for each element.
+	dim3    grid(THREAD_W_R, THREAD_H_R);
+	renderShaderVertexKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, objIterator, THREAD_W_R, 1, 1);
+	// Check for any errors launching the kernel
+	cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "renderShaderVertexKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		goto Error7;
+	}
+
+	// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	// any errors encountered during the launch.
+	cudaStatus = cudaDeviceSynchronize();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching renderShaderVertexKernel!\n", cudaStatus);
+		goto Error7;
+	}
+
+#ifdef WIN_DEBUG
+	///////////////////////////////////////
+	// Copy output vector from GPU buffer to host memory.
+	cudaStatus = cudaMemcpy(res, dev_resf, res_size * sizeof(EFTYPE), cudaMemcpyDeviceToHost);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaMemcpy failed!");
+		goto Error7;
+	}
+	///////////////////////////////////////
+	DEBUG("顶点着色器:");
+	for (int i = 0; i < MAX_ITERATOR; i++) {
+		DEBUG("%.2f->", res[i]);
+	}
+	DEBUG("\n");
+#endif
+
+	goto Error;
+	///////////////////////////////////////
+Error7:
+	///////////////////////////////////////
+Error:
+	return cudaStatus;
+}
 
 __global__ void renderReadyKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles * tgIterator, INT iteratorSize, Device * device)
 {
@@ -1922,14 +2159,6 @@ __global__ void renderReadyKernel(EFTYPE * res, INT size, Manager3D * _man, Tria
 								}
 #endif
 
-								//get line formula
-								//v0-v1
-								Vert3D::GetLine(v1->v_s, v0->v_s, l1);
-								//v1-v
-								Vert3D::GetLine(v->v_s, v1->v_s, l);
-								//v-v0
-								Vert3D::GetLine(v0->v_s, v->v_s, l0);
-
 								EFTYPE zz_f = (v->n_r.x * v->v_c.x + v->n_r.y * v->v_c.y + v->n_r.z * v->v_c.z);
 								for (i = ys; i <= ye && i < device->height; i += 1) {
 									cam = (Cam3D*)obj->cam;
@@ -1961,12 +2190,6 @@ __global__ void renderReadyKernel(EFTYPE * res, INT size, Manager3D * _man, Tria
 											}
 										}
 									}
-									//get range x
-									EFTYPE __y = i;
-									EFTYPE __x;
-									INT _line_l1 = (INT)(l1.x * __y + l1.y);
-									INT _line_l = (INT)(l.x * __y + l.y);
-									INT _line_l0 = (INT)(l0.x * __y + l0.y);
 									EFTYPE view_h = (i - cam->offset_h) / cam->scale_h;
 									for (j = line_l; j <= line_r && j < device->width; j += 1) {
 
@@ -2078,6 +2301,7 @@ __global__ void renderReadyKernel(EFTYPE * res, INT size, Manager3D * _man, Tria
 	res[res_index++] = 99999999;
 	res[res_index++] = iteratorIndex;
 #endif
+	res[0] = iteratorIndex;
 #endif
 
 }
@@ -2085,7 +2309,7 @@ __global__ void renderReadyKernel(EFTYPE * res, INT size, Manager3D * _man, Tria
 #define THREAD_MUTEX_GET()
 #define THREAD_MUTEX_RELEASE()
 
-__global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles * tgIterator, INT grid, INT iteratorW, INT iteratorH, Device * device)
+__global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles * tgIterator, INT iteratorSize, INT grid, INT iteratorW, INT iteratorH, Device * device)
 {
 #ifdef RUN_DEVICE
 	int res_index = 0;
@@ -2172,11 +2396,17 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 #endif
 
 	for (renderIndexY = sy; renderIndexY < ey; renderIndexY++) {
+		if (iteratorIndex >= iteratorSize) {
+			break;
+		}
 		for (renderIndexX = sx; renderIndexX < ex; renderIndexX++) {
-
-			v0 = tgIterator[renderIndexY * grid + renderIndexX].v0;
-			v1 = tgIterator[renderIndexY * grid + renderIndexX].v1;
-			v = tgIterator[renderIndexY * grid + renderIndexX].v;
+			iteratorIndex = renderIndexY * grid + renderIndexX;
+			if (iteratorIndex >= iteratorSize) {
+				break;
+			}
+			v0 = tgIterator[iteratorIndex].v0;
+			v1 = tgIterator[iteratorIndex].v1;
+			v = tgIterator[iteratorIndex].v;
 
 			if (!v || !v0 || !v1) {
 				continue;
@@ -2192,10 +2422,18 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 			//xs = _range == v ? v->xs : max(_range->xs, v->xs); ys = _range == v ? v->ys : max(_range->ys, v->ys);
 			//xe = _range == v ? v->xe : min(_range->xe, v->xe); ye = _range == v ? v->ye : min(_range->ye, v->ye);
 			//draw triangle contour
+			//memset(_image, 0, sizeof(DWORD) * device->width * device->height);
+			//for (i = ys <= 0 ? ys : ys - 1; i <= ye + 1 && i < device->height; i += 1) {
+			//	for (j = xs <= 0 ? xs : xs - 1; j <= xe + 1 && j < device->width; j += 1) {
+			//		_image[i * device->width + j] = 0;
+			//	}
+			//}
+			//Device::Draw_Line(device->tango, device->width, device->height, v0->x0, v0->y0, v1->x0, v1->y0, RED);
+			//Device::Draw_Line(device->tango, device->width, device->height, v1->x0, v1->y0, v->x0, v->y0, RED);
+			//Device::Draw_Line(device->tango, device->width, device->height, v->x0, v->y0, v0->x0, v0->y0, RED);
 			Device::Draw_Line(_image, device->width, device->height, v0->x0, v0->y0, v1->x0, v1->y0, WHITE);
 			Device::Draw_Line(_image, device->width, device->height, v1->x0, v1->y0, v->x0, v->y0, WHITE);
 			Device::Draw_Line(_image, device->width, device->height, v->x0, v->y0, v0->x0, v0->y0, WHITE);
-
 
 #ifdef WIN_DEBUG
 			if (res_index < size) {
@@ -2223,7 +2461,7 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 
 				//little trick^_^
 				line_state = 0;
-				line_l = 0, line_r = 0;
+				line_l = xs, line_r = xe;
 				if (false && device->render_linear < 0) {
 					line_l = xs;
 					line_r = xe;
@@ -2273,12 +2511,12 @@ __global__ void renderKernel(EFTYPE * res, INT size, Manager3D * _man, Triangles
 						n0.set((j - cam->offset_w) / cam->scale_w, view_h, 0, 1);
 						//z = Vert3D::getZ(v->n_d, v->x0, v->y0, v->z, (EFTYPE)j, (EFTYPE)i);
 						z = Vert3D::getZ(v->n_1_z, v->x, v->y, v->z, n0.x, n0.y);
-						z *= MAX_PRECISE;
+						zz = z * MAX_PRECISE;
 						__depth = &_depth[index];
 						if (EP_ISZERO(*__depth)) {
 							//*__depth = z;
 						}
-						if ((int)*__depth == (int)z) {
+						if ((int)*__depth == (int)zz) {
 							//*__depth = z;
 
 							__tango = &device->tango[index];
@@ -2465,7 +2703,7 @@ cudaError_t renderWithCuda(EFTYPE * res, int res_size, Manager3D * man, DWORD * 
 	}
 
 	//raytracing
-	if (1) {
+	if (0) {
 		cudaStatus = cudaMemset(tango, 0, img_size * sizeof(DWORD));
 		if (cudaStatus != cudaStatus) {
 			fprintf(stderr, "cudaMemset failed!");
@@ -2536,11 +2774,20 @@ cudaError_t renderWithCuda(EFTYPE * res, int res_size, Manager3D * man, DWORD * 
 			goto Error7;
 		}
 	#endif
+		///////////////////////////////////////
+		// Copy output vector from GPU buffer to host memory.
+		cudaStatus = cudaMemcpy(res, dev_resf, 1 * sizeof(EFTYPE), cudaMemcpyDeviceToHost);
+		if (cudaStatus != cudaSuccess) {
+			fprintf(stderr, "cudaMemcpy failed!");
+			goto Error7;
+		}
+		INT iteratorSize = res[0];
+
 		//核函数参数：
 		//<<<块并行数，线程并行数，每个块使用的共享内存大小，流对象>>>
 		// Launch a kernel on the GPU with one thread for each element.
-		dim3    grid(1, 1);
-		renderKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, tgIterator, THREAD_W_R, THREAD_W_R, THREAD_H_R, _device);
+		dim3    grid(THREAD_W_R, THREAD_H_R);
+		renderKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, tgIterator, iteratorSize, THREAD_W_R, 1, 1, _device);
 		//多线程由于互斥内存太多，不便于并行
 		//dim3    grid(THREAD_W, THREAD_H);
 		//renderKernel << <grid, 1 >> > (dev_resf, res_size, dev_man, tgIterator, THREAD_W, 1, 1, _device);
@@ -2723,6 +2970,7 @@ VOID onPaint(HWND hWnd)
 		//	}
 		//}
 	//}
+	shaderVertexWithCuda(resf, MAX_ITERATOR, NULL, 0, 0, -1);
 	renderWithCuda(resf, MAX_ITERATOR, NULL, res, WIN_WIDTH * WIN_HEIGHT);
 	//Blt buffer to window buffer
 	DWORD * _tango = EP_GetImageBuffer();

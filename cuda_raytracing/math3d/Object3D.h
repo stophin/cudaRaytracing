@@ -119,6 +119,7 @@ struct Object3D {
 	T& (*renderAABB)(T* that); \
 	void (*refreshAABBW)(T* that);\
 	void (*refreshAABBC)(T* that);\
+	void (*shaderVertex)(T* that);\
 	void (*render_normalize)(T* that, int mode); \
 	T& (*_move)(T* that, EFTYPE dx, EFTYPE dy, EFTYPE dz); \
 	T& (*_scale)(T* that, EFTYPE sx, EFTYPE sy, EFTYPE sz); \
@@ -165,6 +166,7 @@ _PLATFORM Object3D * _Object3D(Object3D * that, VObjPoolImp * poolImp) {
 	that->renderAABB = Object3D_renderAABB ##P; \
 	that->refreshAABBW = Object3D_refreshAABBW ##P; \
 	that->refreshAABBC = Object3D_refreshAABBC ##P; \
+	that->shaderVertex = Object3D_shaderVertex ##P; \
 	that->render_normalize = Object3D_render_normalize ##P; \
 	that->_move = Object3D_move ##P; \
 	that->_scale = Object3D_scale ##P; \
@@ -228,38 +230,54 @@ Function_Object3D(Obj3D, PLATFORM, __)
 #include "Object3D_funcs.h"
 #undef T
 
+
 _PLATFORM void Object3D_render_normalizeEx(Obj3D* that, int mode) {
+	if (NULL == that->cam) {
+		that->debugger = 2;
+		return;
+	}
+	that->debugger = 3;
+	that->CM.setI()* that->M* that->cam->M;
+
+	if (that->render_aabb > 0) {
+		that->render_aabb = -that->render_aabb;
+
+		that->aabb[0].set(that->leftTopBack_O.x, that->leftTopBack_O.y, that->rightBottomFront_O.z);
+		that->aabb[1].set(that->leftTopBack_O.x, that->rightBottomFront_O.y, that->rightBottomFront_O.z);
+		that->aabb[3].set(that->rightBottomFront_O.x, that->leftTopBack_O.y, that->rightBottomFront_O.z);
+		that->aabb[5].set(that->leftTopBack_O.x, that->rightBottomFront_O.y, that->leftTopBack_O.z);
+		that->aabb[6].set(that->rightBottomFront_O.x, that->rightBottomFront_O.y, that->leftTopBack_O.z);
+		that->aabb[7].set(that->rightBottomFront_O.x, that->leftTopBack_O.y, that->leftTopBack_O.z);
+	}
+	if (that->render_aabb) {
+		if (mode == 1) {
+			that->refreshAABBW(that);
+		}
+		else if (mode == 2) {
+			that->refreshAABBC(that);
+		}
+		else if (mode == 3) {
+			that->refreshAABBW(that);
+			that->refreshAABBC(that);
+		}
+	}
+}
+
+_PLATFORM void Object3D_shaderVertexEx(Obj3D* that) {
 	if (NULL == that->cam) {
 		that->debugger = 2;
 		return;
 	}
 	VObj* v = that->verts.link;
 	if (v) {
-		that->debugger = 3;
-		that->CM.setI() * that->M * that->cam->M;
-
-		if (that->render_aabb > 0) {
-			that->render_aabb = -that->render_aabb;
-
-			that->aabb[0].set(that->leftTopBack_O.x, that->leftTopBack_O.y, that->rightBottomFront_O.z);
-			that->aabb[1].set(that->leftTopBack_O.x, that->rightBottomFront_O.y, that->rightBottomFront_O.z);
-			that->aabb[3].set(that->rightBottomFront_O.x, that->leftTopBack_O.y, that->rightBottomFront_O.z);
-			that->aabb[5].set(that->leftTopBack_O.x, that->rightBottomFront_O.y, that->leftTopBack_O.z);
-			that->aabb[6].set(that->rightBottomFront_O.x, that->rightBottomFront_O.y, that->leftTopBack_O.z);
-			that->aabb[7].set(that->rightBottomFront_O.x, that->leftTopBack_O.y, that->leftTopBack_O.z);
+		int i = 0;
+		if (that->verts_r.linkcount > 0) {
+			that->verts_r.linkcount = -that->verts_r.linkcount;
+		}
+		if (that->verts_f.linkcount > 0) {
+			that->verts_f.linkcount = -that->verts_f.linkcount;
 		}
 		if (that->render_aabb) {
-			if (mode == 1) {
-				that->refreshAABBW(that);
-			}
-			else if (mode == 2) {
-				that->refreshAABBC(that);
-			}
-			else if (mode == 3) {
-				that->refreshAABBW(that);
-				that->refreshAABBC(that);
-			}
-			int i;
 			for (i = 0; i < 8; i++) {
 				v->v_r.set(that->aabb_r[i]);
 				v->v_r.w = EP_MAX;
@@ -268,18 +286,11 @@ _PLATFORM void Object3D_render_normalizeEx(Obj3D* that, int mode) {
 				}
 			}
 			if (i == 8) {
-				that->verts_r.clearLink(&that->verts_r);
-				that->verts_f.clearLink(&that->verts_f);
+				//that->verts_r.clearLink(&that->verts_r);
+				//that->verts_f.clearLink(&that->verts_f);
 				that->debugger = 4;
 				return;
 			}
-		}
-		int i = 0;
-		if (that->verts_r.linkcount > 0) {
-			that->verts_r.linkcount = -that->verts_r.linkcount;
-		}
-		if (that->verts_f.linkcount > 0) {
-			that->verts_f.linkcount = -that->verts_f.linkcount;
 		}
 		that->v0 = NULL;
 		that->v1 = NULL;
@@ -327,7 +338,10 @@ _PLATFORM void Object3D_render_normalizeEx(Obj3D* that, int mode) {
 			v->v_r.set(v->v_c);
 			that->debugger = v->v_r.z;
 			v->cut = !that->cam->normalize_cut(that->cam, *v, *that->v0, *that->v1);
-			if (v->cut) {
+			v->cut = !that->cam->normalize(that->cam, v->v_r);
+			if (!v->cut) {
+				//printf("Cut: %p\n", v);
+			} else {
 				that->debugger = 6;
 				v->n_w.set(v->n) ^ that->M;
 				v->n_w.normalize();
@@ -416,6 +430,7 @@ _PLATFORM Obj3D * _Obj3D(Obj3D * that, VObjPoolImp * poolImp) {
 
 
 		that->render_normalize = Object3D_render_normalizeEx;
+		that->shaderVertex = Object3D_shaderVertexEx;
 		return that;
 }
 
